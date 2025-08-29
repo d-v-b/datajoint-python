@@ -6,7 +6,7 @@ import pytest
 from .schema_external import Attach
 
 
-def test_attach_attributes(schema_ext, minio_client, tmpdir_factory):
+def test_attach_attributes(schema_ext, s3_client, tmpdir_factory):
     """Test saving files in attachments"""
     # create a mock file
     table = Attach()
@@ -44,7 +44,7 @@ def test_attach_attributes(schema_ext, minio_client, tmpdir_factory):
     assert p2 == path2[0]
 
 
-def test_return_string(schema_ext, minio_client, tmpdir_factory):
+def test_return_string(schema_ext, s3_client, tmpdir_factory):
     """Test returning string on fetch"""
     # create a mock file
     table = Attach()

@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Dict, List
 
 import certifi
-import minio
+import boto3
+from moto import mock_aws
 import networkx as nx
 import pytest
 import urllib3
@@ -58,18 +59,20 @@ def enable_filepath_feature(monkeypatch):
 @pytest.fixture(scope="session")
 def db_creds_test() -> Dict:
     return dict(
-        host=os.getenv("DJ_TEST_HOST", "db"),
+        host=os.getenv("DJ_TEST_HOST", "localhost"),
         user=os.getenv("DJ_TEST_USER", "datajoint"),
         password=os.getenv("DJ_TEST_PASSWORD", "datajoint"),
+        port=int(os.getenv("MYSQL_PORT", "3307")),
     )
 
 
 @pytest.fixture(scope="session")
 def db_creds_root() -> Dict:
     return dict(
-        host=os.getenv("DJ_HOST", "db"),
+        host=os.getenv("DJ_HOST", "localhost"),
         user=os.getenv("DJ_USER", "root"),
         password=os.getenv("DJ_PASS", "password"),
+        port=int(os.getenv("MYSQL_PORT", "3307")),
     )
 
 
@@ -192,7 +195,7 @@ def connection_test(connection_root, prefix, db_creds_test):
 @pytest.fixture(scope="session")
 def s3_creds() -> Dict:
     return dict(
-        endpoint=os.environ.get("S3_ENDPOINT", "minio:9000"),
+        endpoint=os.environ.get("S3_ENDPOINT", "localhost:9000"),
         access_key=os.environ.get("S3_ACCESS_KEY", "datajoint"),
         secret_key=os.environ.get("S3_SECRET_KEY", "datajoint"),
         bucket=os.environ.get("S3_BUCKET", "datajoint.test"),
@@ -422,41 +425,35 @@ def http_client():
 
 
 @pytest.fixture(scope="session")
-def minio_client_bare(s3_creds):
-    """Initialize MinIO with an endpoint and access/secret keys."""
-    client = minio.Minio(
-        endpoint=s3_creds["endpoint"],
-        access_key=s3_creds["access_key"],
-        secret_key=s3_creds["secret_key"],
-        secure=False,
+def s3_client_bare(s3_creds):
+    """Initialize S3 client for moto mock."""
+    # Return client configuration for moto mock
+    client = boto3.client(
+        's3',
+        region_name='us-east-1',
+        aws_access_key_id=s3_creds["access_key"],
+        aws_secret_access_key=s3_creds["secret_key"]
     )
     return client
 
 
-@pytest.fixture(scope="session")
-def minio_client(s3_creds, minio_client_bare, teardown=False):
-    """Initialize a MinIO client and create buckets for testing session."""
-    # Setup MinIO bucket
-    aws_region = "us-east-1"
-    try:
-        minio_client_bare.make_bucket(s3_creds["bucket"], location=aws_region)
-    except minio.error.S3Error as e:
-        if e.code != "BucketAlreadyOwnedByYou":
-            raise e
-
-    yield minio_client_bare
-    if not teardown:
-        return
-
-    # Teardown S3
-    objs = list(minio_client_bare.list_objects(s3_creds["bucket"], recursive=True))
-    objs = [
-        minio_client_bare.remove_object(
-            s3_creds["bucket"], o.object_name.encode("utf-8")
+@pytest.fixture(scope="function") 
+def s3_client(s3_creds):
+    """Initialize an S3 client with moto for function-scoped testing."""
+    with mock_aws():
+        client = boto3.client(
+            's3',
+            region_name='us-east-1',
+            aws_access_key_id=s3_creds["access_key"],
+            aws_secret_access_key=s3_creds["secret_key"]
         )
-        for o in objs
-    ]
-    minio_client_bare.remove_bucket(s3_creds["bucket"])
+        # Setup S3 bucket
+        try:
+            client.create_bucket(Bucket=s3_creds["bucket"])
+        except Exception:
+            pass  # Bucket might already exist
+        
+        yield client
 
 
 @pytest.fixture

@@ -11,7 +11,7 @@ import datajoint as dj
 from .schema_external import Filepath, FilepathS3
 
 
-def test_path_match(schema_ext, enable_filepath_feature, minio_client, store="repo"):
+def test_path_match(schema_ext, enable_filepath_feature, s3_client, store="repo"):
     """test file path matches and empty file"""
     ext = schema_ext.external[store]
     stage_path = dj.config["stores"][store]["stage"]
@@ -170,7 +170,7 @@ class TestFilepath:
         table,
         store,
         n_repeats,
-        minio_client,
+        s3_client,
         enable_filepath_feature,
         verify_checksum=True,
     ):

@@ -83,7 +83,7 @@ def test_adapted_type(schema_ad):
     c.delete()
 
 
-def test_adapted_filepath_type(schema_ad, minio_client):
+def test_adapted_filepath_type(schema_ad, s3_client):
     """https://github.com/datajoint/datajoint-python/issues/684"""
     c = Connectivity()
     c.delete()

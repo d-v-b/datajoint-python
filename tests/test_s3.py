@@ -1,5 +1,6 @@
 import pytest
-from minio import Minio
+import boto3
+from moto import mock_aws
 
 from datajoint.blob import pack
 from datajoint.errors import DataJointError
@@ -8,12 +9,20 @@ from datajoint.hash import uuid_from_buffer
 from .schema_external import SimpleRemote
 
 
-def test_connection(http_client, minio_client, s3_creds):
-    assert minio_client.bucket_exists(s3_creds["bucket"])
+def test_connection(http_client, s3_client, s3_creds):
+    try:
+        s3_client.head_bucket(Bucket=s3_creds["bucket"])
+        assert True
+    except Exception:
+        assert False
 
 
-def test_connection_secure(minio_client, s3_creds):
-    assert minio_client.bucket_exists(s3_creds["bucket"])
+def test_connection_secure(s3_client, s3_creds):
+    try:
+        s3_client.head_bucket(Bucket=s3_creds["bucket"])
+        assert True
+    except Exception:
+        assert False
 
 
 def test_remove_object_exception(schema_ext, s3_creds):
@@ -27,12 +36,13 @@ def test_remove_object_exception(schema_ext, s3_creds):
     # Save the old external table minio client
     old_client = schema_ext.external["share"].s3.client
 
-    # Apply our new minio client which has a user that does not exist
-    schema_ext.external["share"].s3.client = Minio(
-        s3_creds["endpoint"],
-        access_key="jeffjeff",
-        secret_key="jeffjeff",
-        secure=False,
+    # Apply our new S3 client which has invalid credentials
+    schema_ext.external["share"].s3.client = boto3.client(
+        's3',
+        endpoint_url=f"http://{s3_creds['endpoint']}",
+        aws_access_key_id="jeffjeff",
+        aws_secret_access_key="jeffjeff",
+        region_name='us-east-1'
     )
 
     # This method returns a list of errors

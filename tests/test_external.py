@@ -35,14 +35,14 @@ def test_external_put(schema_ext, mock_stores, mock_cache):
 
 
 class TestLeadingSlash:
-    def test_s3_leading_slash(self, schema_ext, mock_stores, mock_cache, minio_client):
+    def test_s3_leading_slash(self, schema_ext, mock_stores, mock_cache, s3_client):
         """
         s3 external storage configured with leading slash
         """
         self._leading_slash(schema_ext, index=100, store="share")
 
     def test_file_leading_slash(
-        self, schema_ext, mock_stores, mock_cache, minio_client
+        self, schema_ext, mock_stores, mock_cache, s3_client
     ):
         """
         File external storage configured with leading slash
@@ -112,7 +112,7 @@ class TestLeadingSlash:
         dj.config["stores"][store]["location"] = oldConfig
 
 
-def test_remove_fail(schema_ext, mock_stores, mock_cache, minio_client):
+def test_remove_fail(schema_ext, mock_stores, mock_cache, s3_client):
     """
     https://github.com/datajoint/datajoint-python/issues/953
     """

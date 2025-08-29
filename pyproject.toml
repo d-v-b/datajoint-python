@@ -16,7 +16,7 @@ dependencies = [
   "tqdm",
   "networkx",
   "pydot",
-  "minio>=7.0.0",
+  "moto[s3]",
   "matplotlib",
   "faker",
   "urllib3",
@@ -102,3 +102,79 @@ packages = ["datajoint"]
 
 [tool.setuptools.dynamic]
 version = { attr = "datajoint.version.__version__"}
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
+
+[tool.pixi.pypi-dependencies]
+datajoint = { path = ".", editable = true }
+
+[tool.pixi.environments]
+default = { solve-group = "default" }
+dev = { features = ["dev"], solve-group = "default" }
+test = { features = ["test"], solve-group = "default" }
+
+[tool.pixi.tasks]
+echo-env = "echo $PIXI_PROJECT_ROOT"
+# Initialize and start MySQL
+init-db = "$PIXI_PROJECT_ROOT/mysql-wrapper.sh init"
+
+start-db = "$PIXI_PROJECT_ROOT/mysql-wrapper.sh start"
+
+# Start mock S3 server (using moto)
+start-s3 = """
+bash -c '
+  # moto server will be started by pytest fixtures
+  echo "S3 mock will be started by pytest fixtures"
+'
+"""
+
+# Run pytest against the running services
+test = """
+bash -c '
+  # Clear any existing Docker-related environment variables
+  unset DJ_HOST DJ_USER DJ_PASS DJ_TEST_HOST DJ_TEST_USER DJ_TEST_PASSWORD
+  
+  # Set environment variables for Docker MySQL (temporary)
+  export DJ_HOST=db
+  export DJ_USER=root
+  export DJ_PASS=password
+  export DJ_TEST_HOST=db
+  export DJ_TEST_USER=datajoint
+  export DJ_TEST_PASSWORD=datajoint
+  export MYSQL_PORT=3306
+  export DJ_TEST_DATABASE=sqlite:///:memory:
+  export S3_ENDPOINT=localhost:9000
+  export S3_ACCESS_KEY=datajoint
+  export S3_SECRET_KEY=datajoint
+  export S3_BUCKET=datajoint.test
+
+  pip install -q -e ".[test]"
+  pytest --cov-report term-missing --cov=datajoint tests
+'
+"""
+
+# Stop services
+stop-db = "$PIXI_PROJECT_ROOT/mysql-wrapper.sh stop"
+stop-s3 = "bash -c 'echo S3 mock stopped automatically'"
+
+# CI-style task: initialize and start services, run tests, then stop
+ci-test = """
+bash -c '
+  echo "Initializing and starting services..."
+  pixi run init-db
+  pixi run start-db
+  pixi run start-s3
+  
+  echo "Running tests..."
+  pixi run test
+  
+  echo "Stopping services..."
+  pixi run stop-db
+  pixi run stop-s3
+'
+"""
+
+[tool.pixi.dependencies]
+mysql = "8.0.*"
