@@ -1,0 +1,27 @@
+[mysqld]
+# Basic settings
+port = 3307
+bind-address = 127.0.0.1
+socket = /workspaces/datajoint-python/.mysql-data/mysql.sock
+pid-file = /workspaces/datajoint-python/.mysql-data/mysql.pid
+
+# Data directory
+datadir = /workspaces/datajoint-python/.mysql-data
+
+# Authentication
+default-authentication-plugin = mysql_native_password
+skip-grant-tables
+
+# Logging
+log-error = /workspaces/datajoint-python/.mysql-data/error.log
+
+# InnoDB settings to avoid undo tablespace issues
+innodb_undo_tablespaces = 0
+innodb_undo_directory = /workspaces/datajoint-python/.mysql-data
+
+# Character set
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+# Disable networking for security
+skip-networking = false
