@@ -1,0 +1,23 @@
+[mysqld]
+# Basic server settings
+port = 3307
+bind-address = 127.0.0.1
+user = vscode
+
+# Directory settings
+datadir = /workspaces/datajoint-python/.mysql-data
+socket = /workspaces/datajoint-python/mysql.sock
+pid-file = /workspaces/datajoint-python/mysql.pid
+
+# InnoDB settings to avoid undo tablespace issues
+innodb_undo_tablespaces = 2
+innodb_data_home_dir = /workspaces/datajoint-python/.mysql-data
+innodb_log_group_home_dir = /workspaces/datajoint-python/.mysql-data
+
+# Security and compatibility
+default_authentication_plugin = mysql_native_password
+skip_grant_tables
+skip_networking = 0
+
+# Logging
+log_error = /workspaces/datajoint-python/.mysql-data/error.log
