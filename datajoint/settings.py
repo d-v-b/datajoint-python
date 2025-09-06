@@ -1,6 +1,8 @@
 """
 Settings for DataJoint
 """
+from __future__ import annotations
+from typing_extensions import TypedDict
 
 import collections
 import json
@@ -31,8 +33,47 @@ role_to_prefix = {
 }
 prefix_to_role = dict(zip(role_to_prefix.values(), role_to_prefix))
 
-default = dict(
-    {
+ConfigDict = TypedDict('ConfigDict', {
+        "database.host": str,
+        "database.password": str | None,
+        "database.user": str | None,
+        "database.port": int,
+        "database.reconnect": bool,
+        "connection.init_function": object,
+        "connection.charset": str,  # pymysql uses '' as default
+        "loglevel": str,
+        "safemode": bool,
+        "fetch_format": str,
+        "display.limit": int,
+        "display.width": int,
+        "display.show_tuple_count": bool,
+        "database.use_tls": bool | None,
+        "enable_python_native_blobs": bool,  # python-native/dj0 encoding support
+        "add_hidden_timestamp": bool,
+        # file size limit for when to disable checksums
+        "filepath_checksum_size_limit": int | None,
+    })
+
+class LocalStoreSpec(TypedDict):
+    PROTOCOL: str
+    LOCATION: str 
+    subfolding: tuple[int, ...]
+    stage: str
+
+class S3StoreSpec(TypedDict):
+    PROTOCOL: str
+    ENDPOINT: str
+    BUCKET: str
+    ACCESS_KEY: str
+    SECRET_KEY: str
+    LOCATION: str
+    secure: bool
+    subfolding: tuple[int, ...]
+    stage: str
+    proxy_server: str
+
+
+default: ConfigDict = {
         "database.host": "localhost",
         "database.password": None,
         "database.user": None,
@@ -52,7 +93,6 @@ default = dict(
         # file size limit for when to disable checksums
         "filepath_checksum_size_limit": None,
     }
-)
 
 logger = logging.getLogger(__name__.split(".")[0])
 log_levels = {
@@ -134,7 +174,7 @@ class Config(collections.abc.MutableMapping):
         """
         self.save(os.path.expanduser(os.path.join("~", GLOBALCONFIG)), verbose)
 
-    def get_store_spec(self, store):
+    def get_store_spec(self, store) -> LocalStoreSpec | S3StoreSpec:
         """
         find configuration of external stores for blobs and attachments
         """

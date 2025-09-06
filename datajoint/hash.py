@@ -16,7 +16,7 @@ def key_hash(mapping):
     return hashed.hexdigest()
 
 
-def uuid_from_stream(stream, *, init_string=""):
+def uuid_from_stream(stream, *, init_string="") -> uuid.UUID:
     """
     :return: 16-byte digest of stream data
     :stream: stream object or open file handle
@@ -31,9 +31,9 @@ def uuid_from_stream(stream, *, init_string=""):
     return uuid.UUID(bytes=hashed.digest())
 
 
-def uuid_from_buffer(buffer=b"", *, init_string=""):
+def uuid_from_buffer(buffer=b"", *, init_string="") -> uuid.UUID:
     return uuid_from_stream(io.BytesIO(buffer), init_string=init_string)
 
 
-def uuid_from_file(filepath, *, init_string=""):
+def uuid_from_file(filepath, *, init_string="") -> uuid.UUID:
     return uuid_from_stream(Path(filepath).open("rb"), init_string=init_string)

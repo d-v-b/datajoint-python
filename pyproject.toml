@@ -21,6 +21,8 @@ dependencies = [
   "faker",
   "urllib3",
   "setuptools",
+  "zarr-python >=3.1.0",
+  "typing-extensions>=4.15.0"
 ]
 requires-python = ">=3.9,<4.0"
 authors = [
