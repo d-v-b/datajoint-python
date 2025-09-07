@@ -40,7 +40,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        PY_VER: ${PY_VER:-3.9}
+        PY_VER: ${PY_VER:-3.11}
         HOST_UID: ${HOST_UID:-1000}
     depends_on:
       db:
@@ -76,3 +76,14 @@ services:
         pip install -q -e ".[test]"
         pip freeze | grep datajoint
         pytest --cov-report term-missing --cov=datajoint tests
+  djtest-zarr:
+    extends:
+      service: app
+    profiles: ["test"]
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        pip install -q -e ".[test]"
+        pytest --cov-report term-missing --cov=datajoint tests/test_zarr.py
