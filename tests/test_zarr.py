@@ -5,7 +5,7 @@ from numpy.testing import assert_array_equal
 import zarr
 
 import datajoint as dj
-from datajoint._zarr import ZarrTable
+from datajoint._zarr import ExternalZarrTable
 
 from .schema_external import Simple, SimpleRemote
 
@@ -18,7 +18,7 @@ def test_put(schema_ext, mock_stores, mock_cache):
     Test that the zarr group returned by fetching the zarr table object with the hash
     has the same contents as the original.
     """
-    zarrt = ZarrTable(
+    zarrt = ExternalZarrTable(
         schema_ext.connection, 
         store="raw", 
         database=schema_ext.database
