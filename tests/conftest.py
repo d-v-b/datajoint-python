@@ -34,6 +34,18 @@ from . import schema_uuid as schema_uuid_module
 logger = logging.getLogger(__name__)
 
 
+def pytest_sessionstart(session):
+    """Called after the Session object has been created and configured."""
+    # This runs very early, before most fixtures, but we don't have container info yet
+    pass
+
+
+def pytest_configure(config):
+    """Called after command line options have been parsed."""
+    # This runs before pytest_sessionstart but still too early for containers
+    pass
+
+
 
 
 # Global container registry for cleanup
@@ -298,11 +310,40 @@ def enable_filepath_feature(monkeypatch):
 @pytest.fixture(scope="session")
 def db_creds_test(mysql_container) -> Dict:
     _, host, port = mysql_container
+    # Set environment variables for DataJoint at module level
+    os.environ["DJ_TEST_HOST"] = host
+    os.environ["DJ_TEST_PORT"] = str(port)
+
+    # Also update DataJoint's test configuration directly
+    dj.config["database.test.host"] = host
+    dj.config["database.test.port"] = port
+
     return dict(
         host=f"{host}:{port}",
         user=os.getenv("DJ_TEST_USER", "datajoint"),
         password=os.getenv("DJ_TEST_PASSWORD", "datajoint"),
     )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def configure_datajoint_for_containers(mysql_container):
+    """Configure DataJoint to use pytest-managed containers. Runs automatically for all tests."""
+    _, host, port = mysql_container
+
+    # Set environment variables FIRST - these will be inherited by subprocesses
+    logger.info(f"🔧 Setting environment: DJ_HOST={host}, DJ_PORT={port}")
+    os.environ["DJ_HOST"] = host
+    os.environ["DJ_PORT"] = str(port)
+
+    # Verify the environment variables were set
+    logger.info(f"🔧 Environment after setting: DJ_HOST={os.environ.get('DJ_HOST')}, DJ_PORT={os.environ.get('DJ_PORT')}")
+
+    # Also update DataJoint's configuration directly for in-process connections
+    dj.config["database.host"] = host
+    dj.config["database.port"] = port
+
+    logger.info(f"🔧 Configured DataJoint to use MySQL container at {host}:{port}")
+    return host, port  # Return values so other fixtures can use them
 
 
 @pytest.fixture(scope="session")
@@ -434,6 +475,8 @@ def connection_test(connection_root, prefix, db_creds_test):
 @pytest.fixture(scope="session")
 def s3_creds(minio_container) -> Dict:
     _, host, port = minio_container
+    # Set environment variable for S3 endpoint at module level
+    os.environ["S3_ENDPOINT"] = f"{host}:{port}"
     return dict(
         endpoint=f"{host}:{port}",
         access_key=os.environ.get("S3_ACCESS_KEY", "datajoint"),
