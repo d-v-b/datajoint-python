@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -99,10 +100,10 @@ def subfold(name: str, folds: tuple[int, ...]) -> tuple[str, ...]:
     )
 
 
-class ZarrTable(Table):
+class ExternalZarrTable(Table):
     """
-    The table tracking externally stored Zarr hierarchies.
-    Declare as ZarrTable(connection, database)
+    The table tracking externally stored objects, with special support for Zarr hierarchies.
+    Declare as ExternalZarrTable(connection, database)
     """
 
     def __init__(self, connection, store, database):
@@ -141,7 +142,7 @@ class ZarrTable(Table):
 
     @property
     def table_name(self):
-        return f"zarr_{self.store}"
+        return f"{EXTERNAL_TABLE_ROOT}_zarr_{self.store}"
 
     @property
     def s3(self):
@@ -194,37 +195,14 @@ class ZarrTable(Table):
         elif self.spec["protocol"] == "file":
             # For file system, use LocalStore
             from zarr.storage import LocalStore
-            import os
-            os.makedirs(str(dest_path), exist_ok=True)
             dest_store = LocalStore(str(dest_path))
         else:
             raise ValueError(f"Unsupported protocol: {self.spec['protocol']}")
         
         # Copy all keys from source to destination store
         import asyncio
-        asyncio.run(self._manual_copy_store(source_store, dest_store))
+        asyncio.run(_copy_zarr_store(source_store, dest_store))
     
-    async def _manual_copy_store(self, source_store, dest_store):
-        """Manually copy store contents using list_dir and set"""
-        import asyncio
-        
-        # Get all keys from the source store using list_dir
-        try:
-            keys_generator = source_store.list_dir(prefix="")
-            keys = [key async for key in keys_generator]
-        except Exception as e:
-            raise ValueError(f"Cannot enumerate keys in source store: {e}")
-        
-        # Copy each key using get/set
-        for key in keys:
-            try:
-                value = await source_store.get(key)
-                await dest_store.set(key, value)
-            except Exception as e:
-                # Skip keys we can't copy but log the issue
-                print(f"Warning: Could not copy key '{key}': {e}")
-                continue
-
     def _download_file(self, external_path, download_path):
         if self.spec["protocol"] == "s3":
             self.s3.fget(external_path, download_path)
@@ -619,7 +597,7 @@ class ExternalMapping(Mapping):
         :return: the ExternalTable object for the store
         """
         if store not in self._tables:
-            self._tables[store] = ZarrTable(
+            self._tables[store] = ExternalZarrTable(
                 connection=self.schema.connection,
                 store=store,
                 database=self.schema.database,
@@ -631,3 +609,19 @@ class ExternalMapping(Mapping):
 
     def __iter__(self):
         return iter(self._tables)
+
+
+async def _copy_zarr_store(source_store: zarr.abc.store.Store, dest_store: zarr.abc.store.Store) -> None:
+    """Copy the contents of a Zarr store using list_dir and set. This is a brittle, temporary
+    implementation that should be made more robust to handle the failure of individual keys 
+    to copy.
+    """
+    
+    async for key in source_store.list_dir(prefix=""):
+        try:
+            value = await source_store.get(key)
+            await dest_store.set(key, value)
+        except Exception as e:
+            # Skip keys we can't copy but log the issue
+            print(f"Warning: Could not copy key '{key}': {e}")
+            continue
