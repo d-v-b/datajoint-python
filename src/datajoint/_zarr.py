@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing_extensions import Final
 
+import numpy.typing as npt
+import zarr
 from tqdm import tqdm
+from typing_extensions import Final
 
 from datajoint import errors, s3
 from datajoint.declare import EXTERNAL_TABLE_ROOT
@@ -16,9 +19,6 @@ from datajoint.heading import Heading
 from datajoint.settings import config
 from datajoint.table import FreeTable, Table
 from datajoint.utils import safe_copy, safe_write
-import zarr
-import numpy.typing as npt
-import uuid
 
 logger = logging.getLogger(__name__.split(".")[0])
 
@@ -33,7 +33,7 @@ def get_uuid(data: zarr.Group | zarr.Array) -> uuid.UUID:
     Get a UUID based on a Zarr hierarchy by hashing the store contents.
     """
     import hashlib
-    
+
     # Create a hash based on the store contents
     hasher = hashlib.md5()
     
@@ -188,20 +188,97 @@ class ExternalZarrTable(Table):
             # For S3, use FSSpecStore
             import fsspec
             from zarr.storage import FSSpecStore
-            
+
             fs = fsspec.filesystem('s3')
             dest_store = FSSpecStore(fs=fs, path=f"{self.spec['bucket']}/{dest_path}")
-                
+
         elif self.spec["protocol"] == "file":
-            # For file system, use LocalStore
-            from zarr.storage import LocalStore
-            dest_store = LocalStore(str(dest_path))
+            # For file system, create the directory structure and use dict-like copying
+            dest_path = Path(dest_path)
+            dest_path.mkdir(parents=True, exist_ok=True)
+
+            # For local file system, we can copy directly without LocalStore complications
+            # Use a simple dict-like approach for now
+            dest_store = {}
         else:
             raise ValueError(f"Unsupported protocol: {self.spec['protocol']}")
-        
+
         # Copy all keys from source to destination store
-        import asyncio
-        asyncio.run(_copy_zarr_store(source_store, dest_store))
+        if self.spec["protocol"] == "file":
+            # For file protocol, copy files directly
+            self._copy_store_sync(source_store, dest_path)
+        else:
+            # For other protocols, use async copying
+            import asyncio
+            asyncio.run(_copy_zarr_store(source_store, dest_store))
+
+    def _copy_store_sync(self, source_store, dest_path: Path):
+        """
+        Synchronously copy a Zarr store to local filesystem.
+        """
+        # Handle different store types
+        keys = []
+
+        # For MemoryStore, check for _store_dict first
+        if hasattr(source_store, '_store_dict') and isinstance(source_store._store_dict, dict):
+            keys = list(source_store._store_dict.keys())
+        # Try different methods to get keys from the store
+        elif hasattr(source_store, 'list'):
+            # Zarr v3 style
+            try:
+                keys = list(source_store.list())
+            except Exception:
+                pass
+        elif hasattr(source_store, 'keys'):
+            # Dict-like interface
+            try:
+                keys = list(source_store.keys())
+            except Exception:
+                pass
+
+        if not keys:
+            logger.warning(f"Could not get keys from store of type {type(source_store)}")
+            return
+
+        logger.debug(f"Found {len(keys)} keys to copy: {keys}")
+
+        for key in keys:
+            try:
+                # For MemoryStore, access the _store_dict directly
+                if hasattr(source_store, '_store_dict') and key in source_store._store_dict:
+                    value = source_store._store_dict[key]
+                # Try other access methods
+                elif hasattr(source_store, 'get'):
+                    try:
+                        value = source_store.get(key)
+                    except Exception:
+                        value = None
+                else:
+                    try:
+                        value = source_store[key]
+                    except Exception:
+                        value = None
+
+                if value is not None:
+                    dest_file = dest_path / key
+                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Handle Zarr Buffer objects
+                    if hasattr(value, 'to_bytes'):
+                        # Zarr Buffer object
+                        dest_file.write_bytes(value.to_bytes())
+                    elif isinstance(value, bytes):
+                        dest_file.write_bytes(value)
+                    elif hasattr(value, '__bytes__'):
+                        dest_file.write_bytes(bytes(value))
+                    else:
+                        dest_file.write_text(str(value))
+                else:
+                    logger.warning(f"Could not get value for key '{key}'")
+
+            except Exception as e:
+                logger.warning(f"Could not copy key '{key}': {e}")
+                continue
     
     def _download_file(self, external_path, download_path):
         if self.spec["protocol"] == "s3":
@@ -289,36 +366,33 @@ class ExternalZarrTable(Table):
         """
         if data_uuid is None:
             return None
-            
+
         # Get the path to the zarr store
         zarr_path = self._make_uuid_path(data_uuid)
-        
+
         # Create appropriate store based on protocol
         if self.spec["protocol"] == "s3":
             # For S3, use FSSpecStore
             import fsspec
             from zarr.storage import FSSpecStore
-            
+
             fs = fsspec.filesystem('s3')
             store = FSSpecStore(fs=fs, path=f"{self.spec['bucket']}/{zarr_path}")
         elif self.spec["protocol"] == "file":
-            from zarr.storage import LocalStore
-            store = LocalStore(str(zarr_path))
+            # For file system, use the zarr.open with the directory path
+            try:
+                # Try direct open first - this is the most compatible approach
+                result = zarr.open(str(zarr_path), mode='r')
+                return result
+            except Exception as e:
+                raise MissingExternalFile(f"Cannot open Zarr data at {zarr_path}: {e}")
         else:
             raise ValueError(f"Unsupported protocol: {self.spec['protocol']}")
-        
-        # Open as Zarr group (will automatically detect if it's an array)
+
+        # For non-file protocols, try to open using the store
         try:
-            # Use zarr.Group.from_store (synchronous in Zarr 3.1+)
-            try:
-                result = zarr.Group.from_store(store)
-            except Exception:
-                try:
-                    result = zarr.Array.from_store(store)
-                except Exception:
-                    # Fallback: try zarr.open
-                    result = zarr.open(store, mode='r')
-            
+            # Use zarr.open which is most compatible across versions
+            result = zarr.open(store, mode='r')
             return result
         except Exception as e:
             raise MissingExternalFile(f"Cannot open Zarr data at {zarr_path}: {e}")
@@ -613,15 +687,55 @@ class ExternalMapping(Mapping):
 
 async def _copy_zarr_store(source_store: zarr.abc.store.Store, dest_store: zarr.abc.store.Store) -> None:
     """Copy the contents of a Zarr store using list_dir and set. This is a brittle, temporary
-    implementation that should be made more robust to handle the failure of individual keys 
+    implementation that should be made more robust to handle the failure of individual keys
     to copy.
     """
-    
-    async for key in source_store.list_dir(prefix=""):
+
+    # Handle different store types and their APIs
+    try:
+        # For newer Zarr v3 stores
+        if hasattr(source_store, 'list_dir'):
+            keys = []
+            async for key in source_store.list_dir(prefix=""):
+                keys.append(key)
+        else:
+            # For older stores or different implementations
+            if hasattr(source_store, 'keys'):
+                keys = list(source_store.keys())
+            elif hasattr(source_store, 'listdir'):
+                keys = source_store.listdir()
+            else:
+                # For dict-like stores (MemoryStore)
+                keys = list(source_store)
+    except Exception as e:
+        # Fallback for different store implementations
         try:
-            value = await source_store.get(key)
-            await dest_store.set(key, value)
+            keys = list(source_store.keys()) if hasattr(source_store, 'keys') else list(source_store)
+        except:
+            keys = list(source_store)
+
+    for key in keys:
+        try:
+            # Get value from source
+            if hasattr(source_store, 'get') and hasattr(source_store.get, '__aenter__'):
+                # Async get
+                value = await source_store.get(key, prototype=zarr.core.buffer.default_buffer_prototype())
+            elif hasattr(source_store, 'get'):
+                # Sync get for dict-like stores
+                value = source_store[key] if key in source_store else source_store.get(key, None)
+            else:
+                value = source_store[key]
+
+            if value is not None:
+                # Set value in destination
+                if hasattr(dest_store, 'set') and hasattr(dest_store.set, '__aenter__'):
+                    # Async set
+                    await dest_store.set(key, value)
+                else:
+                    # Sync set for dict-like stores
+                    dest_store[key] = value
+
         except Exception as e:
             # Skip keys we can't copy but log the issue
-            print(f"Warning: Could not copy key '{key}': {e}")
+            logger.warning(f"Could not copy key '{key}': {e}")
             continue

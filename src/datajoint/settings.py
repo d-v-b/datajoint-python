@@ -2,7 +2,6 @@
 Settings for DataJoint
 """
 from __future__ import annotations
-from typing_extensions import TypedDict
 
 import collections
 import json
@@ -11,6 +10,8 @@ import os
 import pprint
 from contextlib import contextmanager
 from enum import Enum
+
+from typing_extensions import TypedDict
 
 from .errors import DataJointError
 

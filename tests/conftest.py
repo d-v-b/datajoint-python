@@ -29,7 +29,6 @@ from datajoint.errors import (
 from . import schema, schema_adapted, schema_advanced, schema_external, schema_simple
 from . import schema_uuid as schema_uuid_module
 
-
 # Configure logging for container management
 logger = logging.getLogger(__name__)
 
@@ -115,6 +114,7 @@ def _signal_handler(signum, frame):
 # In pytest, we'll rely on fixture teardown and atexit handlers primarily
 try:
     import pytest
+
     # If we're here, pytest is available, so only register SIGTERM (for CI/batch scenarios)
     signal.signal(signal.SIGTERM, _signal_handler)
     # Don't intercept SIGINT (Ctrl+C) to allow pytest's normal cancellation behavior
