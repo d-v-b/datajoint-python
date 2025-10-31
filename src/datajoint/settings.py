@@ -304,7 +304,9 @@ if "database.port" in mapping and mapping["database.port"] is not None:
     try:
         mapping["database.port"] = int(mapping["database.port"])
     except ValueError:
-        logger.warning(f"Invalid DJ_PORT value: {mapping['database.port']}, using default port 3306")
+        logger.warning(
+            f"Invalid DJ_PORT value: {mapping['database.port']}, using default port 3306"
+        )
         del mapping["database.port"]
 if mapping:
     logger.info(f"Overloaded settings {tuple(mapping)} from environment variables.")
